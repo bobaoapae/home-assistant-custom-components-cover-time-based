@@ -164,18 +164,20 @@ class CoverTimeBased(CoverEntity, RestoreEntity):
     async def async_close_cover(self, **kwargs):
         """Turn the device close."""
         _LOGGER.debug('async_close_cover')
+        was_traveling = self.tc.is_traveling()
         self.tc.start_travel_down()
 
         self.start_auto_updater()
-        await self._async_handle_command(SERVICE_CLOSE_COVER)
+        await self._async_handle_command(SERVICE_CLOSE_COVER, was_traveling)
 
     async def async_open_cover(self, **kwargs):
         """Turn the device open."""
         _LOGGER.debug('async_open_cover')
+        was_traveling = self.tc.is_traveling()
         self.tc.start_travel_up()
 
         self.start_auto_updater()
-        await self._async_handle_command(SERVICE_OPEN_COVER)
+        await self._async_handle_command(SERVICE_OPEN_COVER, was_traveling)
 
     async def async_stop_cover(self, **kwargs):
         """Turn the device stop."""
@@ -195,10 +197,11 @@ class CoverTimeBased(CoverEntity, RestoreEntity):
         elif position > current_position:
             command = SERVICE_OPEN_COVER
         if command is not None:
+            was_traveling = self.tc.is_traveling()
             self.start_auto_updater()
             self.tc.start_travel(position)
             _LOGGER.debug('set_position :: command %s', command)
-            await self._async_handle_command(command)
+            await self._async_handle_command(command, was_traveling)
         return
 
     def start_auto_updater(self):
@@ -239,20 +242,20 @@ class CoverTimeBased(CoverEntity, RestoreEntity):
             self.tc.stop()
     
     
-    async def _async_handle_command(self, command, *args):
+    async def _async_handle_command(self, command, was_traveling=False):
         if command == "close_cover":
             cmd = "DOWN"
-            if self.tc.is_traveling() and self._stop_switch_entity_id:
+            if was_traveling and self._stop_switch_entity_id:
                 await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._stop_switch_entity_id}, False)
-            elif self.tc.is_traveling():
+            elif was_traveling:
                 await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._open_switch_entity_id}, False)
             await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._close_switch_entity_id}, False)
 
         elif command == "open_cover":
             cmd = "UP"
-            if self.tc.is_traveling() and self._stop_switch_entity_id:
+            if was_traveling and self._stop_switch_entity_id:
                 await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._stop_switch_entity_id}, False)
-            elif self.tc.is_traveling():
+            elif was_traveling:
                 await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._close_switch_entity_id}, False)
             await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._open_switch_entity_id}, False)
 
