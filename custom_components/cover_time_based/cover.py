@@ -242,17 +242,17 @@ class CoverTimeBased(CoverEntity, RestoreEntity):
     async def _async_handle_command(self, command, *args):
         if command == "close_cover":
             cmd = "DOWN"
-            if self._stop_switch_entity_id:
+            if self.tc.is_traveling() and self._stop_switch_entity_id:
                 await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._stop_switch_entity_id}, False)
-            else:
+            elif self.tc.is_traveling():
                 await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._open_switch_entity_id}, False)
             await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._close_switch_entity_id}, False)
 
         elif command == "open_cover":
             cmd = "UP"
-            if self._stop_switch_entity_id:
+            if self.tc.is_traveling() and self._stop_switch_entity_id:
                 await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._stop_switch_entity_id}, False)
-            else:
+            elif self.tc.is_traveling():
                 await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._close_switch_entity_id}, False)
             await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._open_switch_entity_id}, False)
 
