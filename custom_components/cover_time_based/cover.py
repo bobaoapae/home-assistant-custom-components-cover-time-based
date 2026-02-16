@@ -254,10 +254,14 @@ class CoverTimeBased(CoverEntity, RestoreEntity):
         """Call for the autoupdater."""
         _LOGGER.debug('auto_updater_hook')
         self.async_schedule_update_ha_state()
-        if self.position_reached():
-            _LOGGER.debug('auto_updater_hook :: position_reached')
+        if self.tc.position_reached():
+            current_pos = self.tc.current_position()
+            _LOGGER.debug('auto_updater_hook :: position_reached at %d', current_pos)
+            self.tc.stop()
             self.stop_auto_updater()
-        self.hass.async_create_task(self.auto_stop_if_necessary())
+            if current_pos > 0 and current_pos < 100:
+                _LOGGER.debug('auto_updater_hook :: intermediate position, sending stop')
+                self.hass.async_create_task(self._async_handle_command(SERVICE_STOP_COVER))
 
     def stop_auto_updater(self):
         """Stop the autoupdater."""
@@ -266,20 +270,6 @@ class CoverTimeBased(CoverEntity, RestoreEntity):
             self._unsubscribe_auto_updater()
             self._unsubscribe_auto_updater = None
 
-    def position_reached(self):
-        """Return if cover has reached its final position."""
-        return self.tc.position_reached()
-
-    async def auto_stop_if_necessary(self):
-        """Do auto stop if necessary."""
-        if self.position_reached():
-            current_pos = self.tc.current_position()
-            self.tc.stop()
-            if current_pos > 0 and current_pos < 100:
-                _LOGGER.debug('auto_stop_if_necessary :: intermediate position, sending stop')
-                await self._async_handle_command(SERVICE_STOP_COVER)
-            else:
-                _LOGGER.debug('auto_stop_if_necessary :: end position %d, no stop needed', current_pos)
     
     
     async def _async_handle_command(self, command, was_traveling=False):
