@@ -6,15 +6,15 @@ import voluptuous as vol
 from datetime import timedelta
 
 from homeassistant.core import callback
-from homeassistant.helpers.event import async_track_utc_time_change, async_track_time_interval
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.components.cover import (
     ATTR_CURRENT_POSITION,
     ATTR_POSITION,
+    CoverEntityFeature,
     PLATFORM_SCHEMA,
     CoverEntity,
 )
 from homeassistant.const import (
-    CONF_NAME,
     SERVICE_CLOSE_COVER,
     SERVICE_OPEN_COVER,
     SERVICE_STOP_COVER,
@@ -27,7 +27,6 @@ _LOGGER = logging.getLogger(__name__)
 
 CONF_DEVICES = 'devices'
 CONF_NAME = 'name'
-CONF_ALIASES = 'aliases'
 CONF_TRAVELLING_TIME_DOWN = 'travelling_time_down'
 CONF_TRAVELLING_TIME_UP = 'travelling_time_up'
 DEFAULT_TRAVEL_TIME = 25
@@ -45,8 +44,6 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
                     vol.Optional(CONF_OPEN_SWITCH_ENTITY_ID): cv.string,
                     vol.Optional(CONF_CLOSE_SWITCH_ENTITY_ID): cv.string,
                     vol.Optional(CONF_STOP_SWITCH_ENTITY_ID): cv.string,
-                    vol.Optional(CONF_ALIASES, default=[]):
-                        vol.All(cv.ensure_list, [cv.string]),
 
                     vol.Optional(CONF_TRAVELLING_TIME_DOWN, default=DEFAULT_TRAVEL_TIME):
                         cv.positive_int,
@@ -86,12 +83,15 @@ class CoverTimeBased(CoverEntity, RestoreEntity):
         self._open_switch_entity_id = open_switch_entity_id
         self._close_switch_entity_id = close_switch_entity_id
         self._stop_switch_entity_id = stop_switch_entity_id
-        
-        if name:
-            self._name = name
-        else:
-            self._name = device_id
-		
+        self._attr_name = name if name else device_id
+        self._attr_unique_id = device_id
+        self._attr_supported_features = (
+            CoverEntityFeature.OPEN
+            | CoverEntityFeature.CLOSE
+            | CoverEntityFeature.STOP
+            | CoverEntityFeature.SET_POSITION
+        )
+
         self._unsubscribe_auto_updater = None
 
         self.tc = TravelCalculator(self._travel_time_down, self._travel_time_up)
@@ -114,11 +114,6 @@ class CoverTimeBased(CoverEntity, RestoreEntity):
             _LOGGER.debug('_handle_my_button :: button stops cover')
             self.tc.stop()
             self.stop_auto_updater()
-
-    @property
-    def name(self):
-        """Return the name of the cover."""
-        return self._name
 
     @property
     def extra_state_attributes(self):
@@ -247,7 +242,6 @@ class CoverTimeBased(CoverEntity, RestoreEntity):
     async def _async_handle_command(self, command, *args):
         if command == "close_cover":
             cmd = "DOWN"
-            self._state = False
             if self._stop_switch_entity_id:
                 await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._stop_switch_entity_id}, False)
             else:
@@ -256,7 +250,6 @@ class CoverTimeBased(CoverEntity, RestoreEntity):
 
         elif command == "open_cover":
             cmd = "UP"
-            self._state = True
             if self._stop_switch_entity_id:
                 await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._stop_switch_entity_id}, False)
             else:
@@ -265,7 +258,6 @@ class CoverTimeBased(CoverEntity, RestoreEntity):
 
         elif command == "stop_cover":
             cmd = "STOP"
-            self._state = True
             if self._stop_switch_entity_id:
                 await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._stop_switch_entity_id}, False)
             else:
