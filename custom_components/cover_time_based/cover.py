@@ -5,19 +5,20 @@ import voluptuous as vol
 
 from datetime import timedelta
 
+from homeassistant.const import (
+    STATE_ON,
+    SERVICE_CLOSE_COVER,
+    SERVICE_OPEN_COVER,
+    SERVICE_STOP_COVER,
+)
 from homeassistant.core import callback
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 from homeassistant.components.cover import (
     ATTR_CURRENT_POSITION,
     ATTR_POSITION,
     CoverEntityFeature,
     PLATFORM_SCHEMA,
     CoverEntity,
-)
-from homeassistant.const import (
-    SERVICE_CLOSE_COVER,
-    SERVICE_OPEN_COVER,
-    SERVICE_STOP_COVER,
 )
 
 import homeassistant.helpers.config_validation as cv
@@ -93,6 +94,7 @@ class CoverTimeBased(CoverEntity, RestoreEntity):
         )
 
         self._unsubscribe_auto_updater = None
+        self._command_in_progress = False
 
         self.tc = TravelCalculator(self._travel_time_down, self._travel_time_up)
 
@@ -107,6 +109,38 @@ class CoverTimeBased(CoverEntity, RestoreEntity):
                 old_state.attributes.get(ATTR_CURRENT_POSITION) is not None):
             self.tc.set_position(int(
                 old_state.attributes.get(ATTR_CURRENT_POSITION)))
+
+        # Listen for external switch activations (remote control, app, etc.)
+        switch_ids = [self._open_switch_entity_id, self._close_switch_entity_id]
+        if self._stop_switch_entity_id:
+            switch_ids.append(self._stop_switch_entity_id)
+        async_track_state_change_event(
+            self.hass, switch_ids, self._async_switch_changed
+        )
+
+    @callback
+    def _async_switch_changed(self, event):
+        """Handle switch state changes from external sources."""
+        if self._command_in_progress:
+            return
+
+        new_state = event.data.get("new_state")
+        if new_state is None or new_state.state != STATE_ON:
+            return
+
+        entity_id = event.data.get("entity_id")
+        _LOGGER.debug('_async_switch_changed :: external activation of %s', entity_id)
+
+        if entity_id == self._open_switch_entity_id:
+            self.tc.start_travel_up()
+            self.start_auto_updater()
+        elif entity_id == self._close_switch_entity_id:
+            self.tc.start_travel_down()
+            self.start_auto_updater()
+        elif entity_id == self._stop_switch_entity_id:
+            self._handle_my_button()
+
+        self.async_write_ha_state()
 
     def _handle_my_button(self):
         """Handle the MY button press"""
@@ -243,31 +277,35 @@ class CoverTimeBased(CoverEntity, RestoreEntity):
     
     
     async def _async_handle_command(self, command, was_traveling=False):
-        if command == "close_cover":
-            cmd = "DOWN"
-            if was_traveling and self._stop_switch_entity_id:
-                await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._stop_switch_entity_id}, False)
-            elif was_traveling:
-                await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._open_switch_entity_id}, False)
-            await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._close_switch_entity_id}, False)
+        self._command_in_progress = True
+        try:
+            if command == "close_cover":
+                cmd = "DOWN"
+                if was_traveling and self._stop_switch_entity_id:
+                    await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._stop_switch_entity_id}, False)
+                elif was_traveling:
+                    await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._open_switch_entity_id}, False)
+                await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._close_switch_entity_id}, False)
 
-        elif command == "open_cover":
-            cmd = "UP"
-            if was_traveling and self._stop_switch_entity_id:
-                await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._stop_switch_entity_id}, False)
-            elif was_traveling:
-                await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._close_switch_entity_id}, False)
-            await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._open_switch_entity_id}, False)
+            elif command == "open_cover":
+                cmd = "UP"
+                if was_traveling and self._stop_switch_entity_id:
+                    await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._stop_switch_entity_id}, False)
+                elif was_traveling:
+                    await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._close_switch_entity_id}, False)
+                await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._open_switch_entity_id}, False)
 
-        elif command == "stop_cover":
-            cmd = "STOP"
-            if self._stop_switch_entity_id:
-                await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._stop_switch_entity_id}, False)
-            else:
-                await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._close_switch_entity_id}, False)
-                await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._open_switch_entity_id}, False)
+            elif command == "stop_cover":
+                cmd = "STOP"
+                if self._stop_switch_entity_id:
+                    await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._stop_switch_entity_id}, False)
+                else:
+                    await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._close_switch_entity_id}, False)
+                    await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._open_switch_entity_id}, False)
 
-        _LOGGER.debug('_async_handle_command :: %s', cmd)
-        
+            _LOGGER.debug('_async_handle_command :: %s', cmd)
+        finally:
+            self._command_in_progress = False
+
         # Update state of entity
         self.async_write_ha_state()

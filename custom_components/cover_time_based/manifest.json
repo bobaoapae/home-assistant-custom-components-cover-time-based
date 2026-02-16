@@ -1,7 +1,7 @@
 {
   "domain": "cover_time_based",
   "name": "Cover Time Based",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "documentation": "https://github.com/bobaoapae/home-assistant-custom-components-cover-time-based",
   "issue_tracker": "https://github.com/bobaoapae/home-assistant-custom-components-cover-time-based/issues",
   "requirements": [
