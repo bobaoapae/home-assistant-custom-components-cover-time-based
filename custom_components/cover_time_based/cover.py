@@ -271,9 +271,13 @@ class CoverTimeBased(CoverEntity, RestoreEntity):
     async def auto_stop_if_necessary(self):
         """Do auto stop if necessary."""
         if self.position_reached():
-            _LOGGER.debug('auto_stop_if_necessary :: calling stop command')
-            await self._async_handle_command(SERVICE_STOP_COVER)
+            current_pos = self.tc.current_position()
             self.tc.stop()
+            if current_pos > 0 and current_pos < 100:
+                _LOGGER.debug('auto_stop_if_necessary :: intermediate position, sending stop')
+                await self._async_handle_command(SERVICE_STOP_COVER)
+            else:
+                _LOGGER.debug('auto_stop_if_necessary :: end position %d, no stop needed', current_pos)
     
     
     async def _async_handle_command(self, command, was_traveling=False):
