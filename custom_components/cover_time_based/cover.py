@@ -34,6 +34,7 @@ DEFAULT_TRAVEL_TIME = 25
 
 CONF_OPEN_SWITCH_ENTITY_ID = 'open_switch_entity_id'
 CONF_CLOSE_SWITCH_ENTITY_ID = 'close_switch_entity_id'
+CONF_STOP_SWITCH_ENTITY_ID = 'stop_switch_entity_id'
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
@@ -43,6 +44,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
                     vol.Optional(CONF_NAME): cv.string,
                     vol.Optional(CONF_OPEN_SWITCH_ENTITY_ID): cv.string,
                     vol.Optional(CONF_CLOSE_SWITCH_ENTITY_ID): cv.string,
+                    vol.Optional(CONF_STOP_SWITCH_ENTITY_ID): cv.string,
                     vol.Optional(CONF_ALIASES, default=[]):
                         vol.All(cv.ensure_list, [cv.string]),
 
@@ -65,7 +67,8 @@ def devices_from_config(domain_config):
         travel_time_up = config.pop(CONF_TRAVELLING_TIME_UP)
         open_switch_entity_id = config.pop(CONF_OPEN_SWITCH_ENTITY_ID)
         close_switch_entity_id = config.pop(CONF_CLOSE_SWITCH_ENTITY_ID)
-        device = CoverTimeBased(device_id, name, travel_time_down, travel_time_up, open_switch_entity_id, close_switch_entity_id)
+        stop_switch_entity_id = config.pop(CONF_STOP_SWITCH_ENTITY_ID, None)
+        device = CoverTimeBased(device_id, name, travel_time_down, travel_time_up, open_switch_entity_id, close_switch_entity_id, stop_switch_entity_id)
         devices.append(device)
     return devices
 
@@ -75,13 +78,14 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
 
 class CoverTimeBased(CoverEntity, RestoreEntity):
 	
-    def __init__(self, device_id, name, travel_time_down, travel_time_up, open_switch_entity_id, close_switch_entity_id):
+    def __init__(self, device_id, name, travel_time_down, travel_time_up, open_switch_entity_id, close_switch_entity_id, stop_switch_entity_id=None):
         """Initialize the cover."""
         from xknx.devices import TravelCalculator
         self._travel_time_down = travel_time_down
         self._travel_time_up = travel_time_up
         self._open_switch_entity_id = open_switch_entity_id
-        self._close_switch_entity_id = close_switch_entity_id        
+        self._close_switch_entity_id = close_switch_entity_id
+        self._stop_switch_entity_id = stop_switch_entity_id
         
         if name:
             self._name = name
@@ -244,20 +248,29 @@ class CoverTimeBased(CoverEntity, RestoreEntity):
         if command == "close_cover":
             cmd = "DOWN"
             self._state = False
-            await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._open_switch_entity_id}, False)
+            if self._stop_switch_entity_id:
+                await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._stop_switch_entity_id}, False)
+            else:
+                await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._open_switch_entity_id}, False)
             await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._close_switch_entity_id}, False)
-            
+
         elif command == "open_cover":
             cmd = "UP"
             self._state = True
-            await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._close_switch_entity_id}, False)
+            if self._stop_switch_entity_id:
+                await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._stop_switch_entity_id}, False)
+            else:
+                await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._close_switch_entity_id}, False)
             await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._open_switch_entity_id}, False)
- 
+
         elif command == "stop_cover":
             cmd = "STOP"
             self._state = True
-            await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._close_switch_entity_id}, False)
-            await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._open_switch_entity_id}, False)
+            if self._stop_switch_entity_id:
+                await self.hass.services.async_call("homeassistant", "turn_on", {"entity_id": self._stop_switch_entity_id}, False)
+            else:
+                await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._close_switch_entity_id}, False)
+                await self.hass.services.async_call("homeassistant", "turn_off", {"entity_id": self._open_switch_entity_id}, False)
 
         _LOGGER.debug('_async_handle_command :: %s', cmd)
         
