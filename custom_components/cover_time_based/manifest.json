@@ -1,10 +1,13 @@
 {
   "domain": "cover_time_based",
   "name": "Cover Time Based",
-  "version": "1.0.0",
-  "documentation": "https://github.com/davidramosweb/home-assistant-custom-components-cover-time-based",
+  "version": "1.1.0",
+  "documentation": "https://github.com/bobaoapae/home-assistant-custom-components-cover-time-based",
+  "issue_tracker": "https://github.com/bobaoapae/home-assistant-custom-components-cover-time-based/issues",
   "requirements": [
     "xknx==0.9.4"
   ],
-  "codeowners": ["@davidramosweb"]
+  "codeowners": ["@bobaoapae"],
+  "integration_type": "hub",
+  "iot_class": "assumed_state"
 }
